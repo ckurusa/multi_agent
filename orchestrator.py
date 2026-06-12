@@ -22,29 +22,43 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
+from config import MAX_RETRIES
 from agents.critic import Critic
 from agents.researcher import Researcher
 from agents.writer import Writer
+
+
+class PipelineError(RuntimeError):
+    """An agent's API call failed. Carries which stage failed and the cause."""
+
+    def __init__(self, stage: str, original: Exception) -> None:
+        self.stage = stage
+        self.original = original
+        super().__init__(f"{stage} 단계 실패: {original}")
 
 
 class Orchestrator:
     """Coordinates the three agents in a fixed pipeline."""
 
     def __init__(self) -> None:
-        client = anthropic.Anthropic()  # one shared client for all agents
+        # One shared client for all agents; SDK retries 429/5xx/connection errors.
+        client = anthropic.Anthropic(max_retries=MAX_RETRIES)
         self.researcher = Researcher(client)
         self.critic = Critic(client)
         self.writer = Writer(client)
 
+    def _stage(self, label: str, fn, *args):
+        print(f"{label} 실행 중...", file=sys.stderr)
+        try:
+            return fn(*args)
+        except anthropic.APIError as err:
+            # Re-raise with the failing stage's name so the caller can report it.
+            raise PipelineError(label, err) from err
+
     def run(self, topic: str) -> dict[str, str]:
-        print("[1/3] researcher 실행 중...", file=sys.stderr)
-        research = self.researcher.run(topic)
-
-        print("[2/3] critic 실행 중...", file=sys.stderr)
-        critique = self.critic.run(topic, research)
-
-        print("[3/3] writer 실행 중...", file=sys.stderr)
-        answer = self.writer.run(topic, research, critique)
+        research = self._stage("[1/3] researcher", self.researcher.run, topic)
+        critique = self._stage("[2/3] critic", self.critic.run, topic, research)
+        answer = self._stage("[3/3] writer", self.writer.run, topic, research, critique)
 
         return {
             "topic": topic,
@@ -59,6 +73,19 @@ def _section(title: str, body: str) -> None:
     print(title)
     print("=" * 60)
     print(body)
+
+
+def _friendly_error(err: Exception) -> str:
+    """Map an Anthropic API error to a short, actionable message."""
+    if isinstance(err, anthropic.AuthenticationError):
+        return "인증 실패: ANTHROPIC_API_KEY 환경 변수를 확인하세요."
+    if isinstance(err, anthropic.RateLimitError):
+        return "요청 한도 초과(rate limit). 잠시 후 다시 시도하세요."
+    if isinstance(err, anthropic.APIConnectionError):
+        return "네트워크 연결 오류. 인터넷 연결을 확인하세요."
+    if isinstance(err, anthropic.APIStatusError):
+        return f"API 오류 (status {err.status_code}): {err.message}"
+    return str(err)
 
 
 def main() -> None:
@@ -83,11 +110,8 @@ def main() -> None:
 
     try:
         result = Orchestrator().run(topic)
-    except anthropic.AuthenticationError:
-        print(
-            "인증 실패: ANTHROPIC_API_KEY 환경 변수가 설정되어 있는지 확인하세요.",
-            file=sys.stderr,
-        )
+    except PipelineError as e:
+        print(f"{e.stage} 단계에서 실패 — {_friendly_error(e.original)}", file=sys.stderr)
         sys.exit(1)
 
     if args.json:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import anthropic
 
-from config import MAX_TOKENS, MODEL
+from config import MAX_RETRIES, MAX_TOKENS, MODEL
 
 
 class BaseAgent:
@@ -17,7 +17,7 @@ class BaseAgent:
 
     def __init__(self, client: anthropic.Anthropic | None = None) -> None:
         # A bare Anthropic() resolves ANTHROPIC_API_KEY from the environment.
-        self.client = client or anthropic.Anthropic()
+        self.client = client or anthropic.Anthropic(max_retries=MAX_RETRIES)
 
     def _complete(self, prompt: str, max_tokens: int | None = None) -> str:
         response = self.client.messages.create(
