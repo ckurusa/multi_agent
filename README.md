@@ -29,6 +29,18 @@ python orchestrator.py "양자 컴퓨팅이 암호화에 미치는 영향"
 
 진행 로그는 `stderr`로, 최종 답변은 `stdout`으로 출력됩니다.
 
+### 옵션
+
+| 플래그 | 설명 |
+|--------|------|
+| `-v`, `--verbose` | research·critique 중간 단계 결과도 함께 출력 |
+| `--json` | 전체 result(topic/research/critique/answer)를 JSON으로 출력 |
+
+```bash
+python orchestrator.py --verbose "양자 컴퓨팅이 암호화에 미치는 영향"
+python orchestrator.py --json "..." > result.json
+```
+
 ## 파일 구조
 
 ```

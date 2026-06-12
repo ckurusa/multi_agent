@@ -8,6 +8,8 @@ Requires ANTHROPIC_API_KEY in the environment.
 """
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 
 import anthropic
@@ -52,12 +54,29 @@ class Orchestrator:
         }
 
 
-def main() -> None:
-    if len(sys.argv) > 1:
-        topic = " ".join(sys.argv[1:]).strip()
-    else:
-        topic = input("주제/질문을 입력하세요: ").strip()
+def _section(title: str, body: str) -> None:
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60)
+    print(body)
 
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="멀티 에이전트 파이프라인 (research → critique → write)"
+    )
+    parser.add_argument("topic", nargs="*", help="주제/질문 (생략 시 대화형 입력)")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="research·critique 중간 단계 결과도 함께 출력",
+    )
+    parser.add_argument(
+        "--json", action="store_true",
+        help="전체 result(딕셔너리)를 JSON으로 출력",
+    )
+    args = parser.parse_args()
+
+    topic = " ".join(args.topic).strip() or input("주제/질문을 입력하세요: ").strip()
     if not topic:
         print("주제가 비어 있습니다. 입력 후 다시 실행하세요.")
         return
@@ -71,10 +90,14 @@ def main() -> None:
         )
         sys.exit(1)
 
-    print("\n" + "=" * 60)
-    print("최종 답변")
-    print("=" * 60)
-    print(result["answer"])
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    if args.verbose:
+        _section("[research] 리서치 노트", result["research"])
+        _section("[critique] 비평", result["critique"])
+    _section("최종 답변", result["answer"])
 
 
 if __name__ == "__main__":
